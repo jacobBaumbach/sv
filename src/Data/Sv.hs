@@ -28,6 +28,7 @@ module Data.Sv (
   , parseDecodeNamed
   , parseDecodeNamedFromFile
   , parseDecodeNamedFromDsvCursor
+  , toField
   , decode
   , decodeMay
   , decodeEither

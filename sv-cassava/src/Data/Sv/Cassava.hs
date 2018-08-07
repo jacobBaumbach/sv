@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {-|
 Module      : Data.Sv.Cassava
 Copyright   : (C) CSIRO 2017-2018
@@ -30,8 +32,11 @@ import Data.ByteString (ByteString)
 import Data.ByteString.UTF8 as UTF8
 import qualified Data.Csv as Cassava
 import qualified Data.Csv.Parser as Cassava
+import Data.Sv (toField)
 import Data.Sv.Structure.Core (Headedness (..))
 import Data.Sv.Decode.Core (Decode', DecodeValidation, validateEitherWith)
+import Data.Sv.Decode.Error (badConfig, missingHeader)
+import Data.Sv.Decode.Type (NameDecode')
 import qualified Data.Sv.Decode.Core as D
 import Data.Validation (bindValidation)
 import qualified Data.Vector as V
@@ -40,6 +45,15 @@ import qualified Data.Vector as V
 decodeFromCassava :: Decode' ByteString a -> Cassava.Csv -> DecodeValidation ByteString [a]
 decodeFromCassava d =
   traverse (D.promote d) . V.toList
+
+decodeNamedFromCassava :: NameDecode' ByteString a -> Cassava.Csv -> DecodeValidation ByteString [a]
+decodeNamedFromCassava d c =
+  let parts =
+    case V.toList c of
+      [] -> missingHeader
+      (header:body) -> (,body) <$> bindValidation (traverse toField header) (flip makePositional n)
+  in bindValidation parts $ \(d,b) ->
+     flip bindValidation (decode d) $ traverse (traverse toField) b
 
 -- | Parse a 'Cassava.Csv' from a 'ByteString' using cassava's parser
 --
@@ -62,3 +76,9 @@ parseDecodeFromCassava d h opts bs =
       -- If it does, we want to skip that row.
       chompFirst Headed   = V.drop 1
       chompFirst Unheaded = id
+
+parseDecodeNamedFromCassava :: NameDecode' ByteString a -> Headedness -> Cassava.DecodeOptions -> ByteString -> DecodeValidation ByteString [a]
+parseDecodeNamedFromCassava d h opts b =
+  case h of
+    Unheaded -> badConfig "Your config indicates your csv has no header, but a header is required"
+    Headed -> bindValidation (parseCassava opts b) (\csv -> decodeNamedFromCassava d csv)
